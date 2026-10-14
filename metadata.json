@@ -1,0 +1,6 @@
+{
+  "name": "Resilify AI - Guntur Smart City Disaster & Emergency Resilience Grid",
+  "description": "An autonomous municipal emergency coordination and disaster intelligence platform for Guntur Municipal Corporation (Andhra Pradesh) powered by multimodal Gemini AI. Supports Telugu, Hindi, and English.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
