@@ -7,6 +7,7 @@ import { IncidentActionPlanView } from './components/IncidentActionPlanModal';
 import { JuryShowcaseDeck } from './components/JuryShowcaseDeck';
 import { JuryTourGuide } from './components/JuryTourGuide';
 import { JuryPitchHelper } from './components/JuryPitchHelper';
+import { FuturisticCursorEffect } from './components/FuturisticCursorEffect';
 import { TestRunnerSuite } from './components/TestRunnerSuite';
 import { AccessibilityProvider, useAccessibility } from './context/AccessibilityContext';
 import { INITIAL_WARDS } from './data/mockData';
@@ -151,6 +152,9 @@ function MainAppContent() {
 
       {/* Floating Presenter Cheat Sheet & 30s Pitch Widget */}
       <JuryPitchHelper />
+
+      {/* Futuristic Cursor Follower, Holographic Spotlight, & HUD Telemetry */}
+      <FuturisticCursorEffect />
 
       {/* Clean Municipal Footer Landmark */}
       <footer

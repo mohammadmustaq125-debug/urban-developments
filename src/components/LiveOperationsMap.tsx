@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { WardTelemetry } from '../types';
 import { BeforeAfterComparison } from './BeforeAfterComparison';
 import { useAccessibility } from '../context/AccessibilityContext';
+import { playCyberTone } from '../utils/cyberAudio';
 import {
   ShieldAlert,
   Zap,
@@ -18,6 +19,10 @@ import {
   Satellite,
   Map,
   Compass,
+  Move,
+  Maximize2,
+  Sliders,
+  Activity,
 } from 'lucide-react';
 
 interface LiveOperationsMapProps {
@@ -43,29 +48,117 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
   const [showFloodOverlay, setShowFloodOverlay] = useState(true);
   const [showGridOverlay, setShowGridOverlay] = useState(true);
   const [showAmbulanceOverlay, setShowAmbulanceOverlay] = useState(true);
+  const [showRadarSweep, setShowRadarSweep] = useState(true);
+  
+  // Dynamic Zoom & Panning
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0, initialPanX: 0, initialPanY: 0 });
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+
+  // Map Hover Coordinates
+  const [hoverCoords, setHoverCoords] = useState<{ lat: string; lng: string; wardHint?: string } | null>(null);
+
   const [activeNotification, setActiveNotification] = useState<string | null>(null);
-  const { announce, language } = useAccessibility();
+  const { announce } = useAccessibility();
 
   const activeWard = selectedWard || wards[1] || wards[0];
 
   const handleTriggerActuator = (subsystem: string, action: string) => {
     setActiveNotification(`${subsystem}: ${action}`);
     announce(`Autonomous actuator triggered: ${subsystem}`);
+    playCyberTone('actuator', 440, 0.12);
     setTimeout(() => setActiveNotification(null), 4000);
   };
 
-  const handleZoom = (delta: number) => {
-    setZoomLevel((prev) => {
-      const next = Math.max(1, Math.min(2.2, Number((prev + delta).toFixed(1))));
-      announce(`Map zoom set to ${(next * 100).toFixed(0)} percent`);
-      return next;
-    });
+  const handleZoom = useCallback(
+    (delta: number) => {
+      setZoomLevel((prev) => {
+        const next = Math.max(1, Math.min(3.0, Number((prev + delta).toFixed(2))));
+        if (next === 1) {
+          setPanOffset({ x: 0, y: 0 });
+        }
+        playCyberTone('zoom', delta > 0 ? 580 : 420, 0.07);
+        announce(`Map zoom set to ${(next * 100).toFixed(0)} percent`);
+        return next;
+      });
+    },
+    [announce]
+  );
+
+  const handleSetExactZoom = (level: number) => {
+    const clamped = Math.max(1, Math.min(3.0, level));
+    setZoomLevel(clamped);
+    if (clamped === 1) setPanOffset({ x: 0, y: 0 });
+    playCyberTone('zoom', 500, 0.06);
+    announce(`Map zoom set to ${(clamped * 100).toFixed(0)} percent`);
   };
 
   const handleResetZoom = () => {
     setZoomLevel(1);
-    announce('Map centered on Guntur Municipal Corporation Collectorate');
+    setPanOffset({ x: 0, y: 0 });
+    playCyberTone('blip', 520, 0.08);
+    announce('Map reset to 100 percent and centered on Guntur Municipal Corporation Collectorate');
+  };
+
+  // Mouse wheel zoom over map canvas
+  const handleMapWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.2 : -0.2;
+    handleZoom(delta);
+  };
+
+  // Drag to pan map when zoomed in
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoomLevel <= 1) return;
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      initialPanX: panOffset.x,
+      initialPanY: panOffset.y,
+    };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    // 1. Calculate map hover coordinates
+    if (mapContainerRef.current) {
+      const rect = mapContainerRef.current.getBoundingClientRect();
+      const relX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const relY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+      const lat = (16.34 - relY * 0.07).toFixed(4);
+      const lng = (80.41 + relX * 0.08).toFixed(4);
+
+      // Check nearest ward
+      const nearest = wards.reduce((prev, curr) => {
+        const distCurr = Math.hypot(curr.x - relX * 100, curr.y - relY * 100);
+        const distPrev = Math.hypot(prev.x - relX * 100, prev.y - relY * 100);
+        return distCurr < distPrev ? curr : prev;
+      });
+
+      setHoverCoords({
+        lat,
+        lng,
+        wardHint: nearest.name,
+      });
+    }
+
+    // 2. Dragging update
+    if (isDragging && zoomLevel > 1) {
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+      const maxPan = (zoomLevel - 1) * 200;
+      setPanOffset({
+        x: Math.max(-maxPan, Math.min(maxPan, dragStartRef.current.initialPanX + dx)),
+        y: Math.max(-maxPan, Math.min(maxPan, dragStartRef.current.initialPanY + dy)),
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
   };
 
   return (
@@ -78,7 +171,7 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500"></span>
             </span>
-            <span className="text-xs font-semibold text-white">
+            <span className="text-xs font-semibold text-white font-display">
               Evaluating for Hackathon / Prompt War?
             </span>
             <span className="hidden md:inline text-xs text-slate-300">
@@ -105,18 +198,18 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
             className="w-full h-full object-cover brightness-60"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent flex flex-col justify-end p-6 md:p-8">
-            <div className="flex items-center gap-2 text-xs font-semibold text-cyan-400 mb-2">
+            <div className="flex items-center gap-2 text-xs font-semibold text-cyan-400 mb-2 font-display">
               <span>Guntur Municipal Corporation (GMC)</span>
               <span aria-hidden="true">·</span>
-              <span>గుంటూరు స్మార్ట్ సిటీ గ్రిడ్</span>
+              <span className="font-telugu">గుంటూరు స్మార్ట్ సిటీ గ్రిడ్</span>
               <span aria-hidden="true">·</span>
               <span>APSDMA & 10th Bn NDRF</span>
             </div>
-            <h1 id="command-center-heading" className="text-2xl md:text-3xl font-extrabold text-white tracking-tight max-w-2xl text-balance">
+            <h1 id="command-center-heading" className="text-2xl md:text-3xl font-extrabold text-white tracking-tight max-w-2xl text-balance font-heading">
               Guntur Metropolitan Satellite Resilience Grid
             </h1>
             <p className="text-sm md:text-base text-slate-200 mt-2 max-w-3xl leading-relaxed">
-              Real-time high-resolution satellite imagery coupled with Krishna canal backwaters, APCPDCL 11kV grid topology, GGH Guntur 108 ambulance corridors, and Asia Largest Mirchi Yard. Instant autonomous signal preemption and flood sluice control.
+              Real-time high-resolution satellite imagery coupled with Krishna canal backwaters, APCPDCL 11kV grid topology, GGH Guntur 108 ambulance corridors, and Asia's Largest Mirchi Yard. Instant autonomous signal preemption and flood sluice control.
             </p>
           </div>
         </div>
@@ -126,25 +219,25 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
           <div className="px-3 py-2">
             <div className="text-xs text-slate-300 font-medium">Average Triage Latency</div>
             <div className="text-xl font-bold text-cyan-400 font-mono tabular-nums mt-0.5">
-              1.24s <span className="text-xs font-normal text-slate-400">vs 14m legacy</span>
+              1.24s <span className="text-xs font-normal text-slate-400 font-sans">vs 14m legacy</span>
             </div>
           </div>
           <div className="px-3 py-2">
             <div className="text-xs text-slate-300 font-medium">Active Sensor Nodes</div>
             <div className="text-xl font-bold text-white font-mono tabular-nums mt-0.5">
-              4,820 <span className="text-xs font-normal text-emerald-400">99.8% Online</span>
+              4,820 <span className="text-xs font-normal text-emerald-400 font-sans">99.8% Online</span>
             </div>
           </div>
           <div className="px-3 py-2">
             <div className="text-xs text-slate-300 font-medium">Autonomous Actions Today</div>
             <div className="text-xl font-bold text-emerald-400 font-mono tabular-nums mt-0.5">
-              184 <span className="text-xs font-normal text-slate-400">Zero-Human Delay</span>
+              184 <span className="text-xs font-normal text-slate-400 font-sans">Zero-Human Delay</span>
             </div>
           </div>
           <div className="px-3 py-2">
             <div className="text-xs text-slate-300 font-medium">Estimated Casualties Averted</div>
             <div className="text-xl font-bold text-white font-mono tabular-nums mt-0.5">
-              34 <span className="text-xs font-normal text-cyan-400">Model Forecast</span>
+              34 <span className="text-xs font-normal text-cyan-400 font-sans">Model Forecast</span>
             </div>
           </div>
         </div>
@@ -166,12 +259,12 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
       {/* Main Grid: Satellite Map + Ward Telemetry Detail */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Column: Satellite Map & Geospatial Twin */}
-        <section aria-labelledby="map-heading" className="lg:col-span-8 rounded-xl border border-slate-800 bg-slate-900/95 p-5 space-y-4 shadow-xl">
+        <section aria-labelledby="map-heading" className="lg:col-span-8 rounded-xl border border-slate-800 bg-slate-900/95 p-5 space-y-4 shadow-xl cyber-panel">
           <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
             <div>
               <div className="flex items-center gap-2">
                 <Satellite className="w-4 h-4 text-cyan-400" aria-hidden="true" />
-                <h2 id="map-heading" className="text-base font-bold text-white">
+                <h2 id="map-heading" className="text-base font-bold text-white font-display">
                   Guntur Metropolitan Satellite Orthophoto Grid (ఉపగ్రహ వీక్షణ)
                 </h2>
               </div>
@@ -188,6 +281,7 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
                 aria-selected={mapMode === 'satellite'}
                 onClick={() => {
                   setMapMode('satellite');
+                  playCyberTone('blip', 620, 0.06);
                   announce('Switched to Satellite Earth Observation view');
                 }}
                 className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -206,6 +300,7 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
                 aria-selected={mapMode === 'hybrid'}
                 onClick={() => {
                   setMapMode('hybrid');
+                  playCyberTone('blip', 600, 0.06);
                   announce('Switched to Hybrid Tactical Radar view');
                 }}
                 className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -224,6 +319,7 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
                 aria-selected={mapMode === 'vector'}
                 onClick={() => {
                   setMapMode('vector');
+                  playCyberTone('blip', 580, 0.06);
                   announce('Switched to Vector Digital Grid view');
                 }}
                 className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -238,10 +334,10 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
             </div>
           </div>
 
-          {/* Satellite Layer Toggles & Zoom Controls Toolbar */}
+          {/* Satellite Layer Toggles & Interactive Zoom Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-300 bg-slate-950/80 p-2.5 rounded-lg border border-slate-800">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider font-mono">
                 Layers:
               </span>
 
@@ -251,6 +347,7 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
                 aria-pressed={showFloodOverlay}
                 onClick={() => {
                   setShowFloodOverlay(!showFloodOverlay);
+                  playCyberTone('blip', 480, 0.05);
                   announce(showFloodOverlay ? 'Flood radar overlay disabled' : 'Flood radar overlay enabled');
                 }}
                 className={`px-2 py-1 rounded text-[11px] font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
@@ -269,6 +366,7 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
                 aria-pressed={showGridOverlay}
                 onClick={() => {
                   setShowGridOverlay(!showGridOverlay);
+                  playCyberTone('blip', 500, 0.05);
                   announce(showGridOverlay ? 'Power grid overlay disabled' : 'Power grid overlay enabled');
                 }}
                 className={`px-2 py-1 rounded text-[11px] font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
@@ -278,7 +376,7 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
                 }`}
               >
                 <Zap className="w-3 h-3 text-amber-400" aria-hidden="true" />
-                <span>11kV APCPDCL Grid</span>
+                <span>11kV Grid</span>
               </button>
 
               {/* 108 Ambulance Pings Toggle */}
@@ -287,6 +385,7 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
                 aria-pressed={showAmbulanceOverlay}
                 onClick={() => {
                   setShowAmbulanceOverlay(!showAmbulanceOverlay);
+                  playCyberTone('blip', 520, 0.05);
                   announce(showAmbulanceOverlay ? 'Ambulance tracking disabled' : 'Ambulance tracking enabled');
                 }}
                 className={`px-2 py-1 rounded text-[11px] font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
@@ -296,57 +395,131 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
                 }`}
               >
                 <Truck className="w-3 h-3 text-emerald-400" aria-hidden="true" />
-                <span>108 GPS Pings</span>
+                <span>108 GPS</span>
+              </button>
+
+              {/* Radar Sweep Toggle */}
+              <button
+                type="button"
+                aria-pressed={showRadarSweep}
+                onClick={() => {
+                  setShowRadarSweep(!showRadarSweep);
+                  announce(showRadarSweep ? 'Radar sweep paused' : 'Radar sweep activated');
+                }}
+                className={`px-2 py-1 rounded text-[11px] font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                  showRadarSweep
+                    ? 'bg-cyan-900/50 text-cyan-200 border-cyan-600'
+                    : 'bg-slate-900 text-slate-400 border-slate-800'
+                }`}
+              >
+                <Activity className="w-3 h-3 text-cyan-400" aria-hidden="true" />
+                <span>Radar Sweep</span>
               </button>
             </div>
 
-            {/* Zoom & Center Controls */}
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleZoom(0.2)}
-                aria-label="Zoom in on satellite map"
-                className="p-1.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 cursor-pointer"
-              >
-                <ZoomIn className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleZoom(-0.2)}
-                aria-label="Zoom out on satellite map"
-                className="p-1.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 cursor-pointer"
-              >
-                <ZoomOut className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
+            {/* Enhanced Zoom & Panning Controls with Presets */}
+            <div className="flex items-center gap-2">
+              {/* Quick Zoom Presets */}
+              <div className="hidden sm:flex items-center gap-1 bg-slate-900 p-0.5 rounded border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => handleSetExactZoom(1.0)}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer transition-colors ${
+                    zoomLevel === 1.0 ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Full Metropolitan Guntur Overview (100%)"
+                >
+                  1.0x
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetExactZoom(1.5)}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer transition-colors ${
+                    zoomLevel === 1.5 ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Urban Center Corridors (150%)"
+                >
+                  1.5x
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetExactZoom(2.2)}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer transition-colors ${
+                    zoomLevel === 2.2 ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Ward & Naala Detail (220%)"
+                >
+                  2.2x
+                </button>
+              </div>
+
+              {/* Zoom Buttons & Percent Readout */}
+              <div className="flex items-center gap-1 bg-slate-900 px-1 py-0.5 rounded border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => handleZoom(-0.25)}
+                  disabled={zoomLevel <= 1.0}
+                  aria-label="Zoom out on satellite map"
+                  className="p-1 rounded hover:bg-slate-800 text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+
+                <span className="font-mono text-[11px] text-cyan-300 font-bold px-1 min-w-[42px] text-center tabular-nums">
+                  {Math.round(zoomLevel * 100)}%
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => handleZoom(0.25)}
+                  disabled={zoomLevel >= 3.0}
+                  aria-label="Zoom in on satellite map"
+                  className="p-1 rounded hover:bg-slate-800 text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              </div>
+
+              {/* Center GMC Collectorate Reset */}
               <button
                 type="button"
                 onClick={handleResetZoom}
                 aria-label="Center map on Guntur District Collectorate"
-                className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] font-semibold text-cyan-300 flex items-center gap-1 cursor-pointer"
+                className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] font-semibold text-cyan-300 flex items-center gap-1 cursor-pointer transition-colors"
               >
-                <Crosshair className="w-3 h-3" aria-hidden="true" />
-                <span>Center GMC</span>
+                <Crosshair className="w-3 h-3 text-cyan-400" aria-hidden="true" />
+                <span className="hidden md:inline">Center GMC</span>
               </button>
             </div>
           </div>
 
           {/* Interactive Satellite Canvas Container */}
           <div
+            ref={mapContainerRef}
             role="region"
-            aria-label="Interactive Metropolitan Satellite Map of Guntur Municipal Corporation Wards"
-            className="relative w-full aspect-16/10 bg-slate-950 rounded-xl border border-slate-800 overflow-hidden shadow-2xl"
+            aria-label="Interactive Metropolitan Satellite Map of Guntur Municipal Corporation Wards. Use zoom controls or drag to explore."
+            onWheel={handleMapWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            className={`relative w-full aspect-16/10 bg-slate-950 rounded-xl border border-slate-800 overflow-hidden shadow-2xl select-none ${
+              zoomLevel > 1 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
+            }`}
           >
-            {/* Inner Pannable/Zoomable Container */}
+            {/* Inner Pannable/Zoomable Canvas Container */}
             <div
-              className="absolute inset-0 transition-transform duration-300 origin-center"
-              style={{ transform: `scale(${zoomLevel})` }}
+              className="absolute inset-0 transition-transform duration-200 origin-center ease-out"
+              style={{
+                transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
+              }}
             >
               {/* Satellite Orthophoto Layer */}
               {(mapMode === 'satellite' || mapMode === 'hybrid') && (
                 <img
                   src="/src/assets/images/guntur_satellite_map_1791967151622.jpg"
                   alt="High-resolution satellite orthophoto of Guntur city and Krishna canal corridor"
-                  className={`w-full h-full object-cover transition-opacity duration-300 ${
+                  className={`w-full h-full object-cover transition-opacity duration-300 pointer-events-none ${
                     mapMode === 'satellite' ? 'opacity-90 contrast-110' : 'opacity-65 brightness-90'
                   }`}
                 />
@@ -454,51 +627,77 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
                     key={w.id}
                     role="button"
                     tabIndex={0}
-                    aria-pressed={isSelected}
-                    aria-label={`Ward ${w.code}: ${w.name}. Risk Score: ${w.riskScore} percent, Status: ${w.status}`}
-                    onClick={() => onSelectWard(w)}
+                    aria-label={`Ward ${w.code} - ${w.name}. Risk Score ${w.riskScore} percent. Status: ${w.status}. Click or press Enter to inspect.`}
+                    onClick={() => {
+                      onSelectWard(w);
+                      playCyberTone('blip', 650, 0.06);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
                         onSelectWard(w);
+                        playCyberTone('blip', 650, 0.06);
                       }
                     }}
                     style={{ left: `${w.x}%`, top: `${w.y}%` }}
-                    className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-200 z-20 focus:outline-none focus:ring-4 focus:ring-cyan-300 rounded-full ${
-                      isSelected ? 'scale-125 z-30' : 'hover:scale-110'
-                    }`}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer group z-20 focus:outline-none focus-visible:ring-4 focus-visible:ring-cyan-400 rounded-full"
                   >
+                    {/* Outer Ping Ring for High Risk Wards */}
+                    {(isCritical || isWarning) && (
+                      <span
+                        className={`absolute -inset-2 rounded-full animate-ping opacity-60 ${
+                          isCritical ? 'bg-rose-500' : 'bg-amber-500'
+                        }`}
+                        aria-hidden="true"
+                      />
+                    )}
+
+                    {/* Ward Target Pin */}
                     <div
-                      className={`relative flex items-center justify-center w-8 h-8 rounded-full border-2 shadow-2xl backdrop-blur-xs ${
-                        isCritical
-                          ? 'bg-rose-950/95 border-rose-400 text-rose-200 shadow-rose-900/80 ring-2 ring-rose-500/50'
+                      className={`relative flex items-center justify-center rounded-full transition-all duration-200 border-2 ${
+                        isSelected
+                          ? 'w-10 h-10 bg-cyan-400 text-slate-950 font-black border-white shadow-[0_0_20px_rgba(34,211,238,0.8)] scale-110'
+                          : isCritical
+                          ? 'w-8 h-8 bg-rose-600 text-white font-extrabold border-rose-300'
                           : isWarning
-                          ? 'bg-amber-950/95 border-amber-400 text-amber-200 shadow-amber-900/80 ring-2 ring-amber-500/50'
-                          : 'bg-slate-900/95 border-cyan-400 text-cyan-200 shadow-cyan-900/80 ring-2 ring-cyan-500/50'
-                      } ${isSelected ? 'ring-4 ring-cyan-400 font-extrabold' : ''}`}
+                          ? 'w-7 h-7 bg-amber-500 text-slate-950 font-extrabold border-amber-200'
+                          : 'w-6 h-6 bg-slate-800 text-slate-200 font-bold border-slate-600'
+                      }`}
                     >
-                      <span className="text-[10px] font-mono font-black">{w.code.replace('GMC-', '')}</span>
+                      <span className="text-[10px] font-mono leading-none">{w.code.split('-')[1]}</span>
                     </div>
 
-                    {/* Ward Label Banner */}
-                    <div className="absolute top-9 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-md bg-slate-950/95 border border-slate-700 text-[10px] text-white font-bold pointer-events-none shadow-lg">
-                      {w.name.split('&')[0].trim()}
+                    {/* Label Tooltip */}
+                    <div
+                      className={`absolute left-1/2 -translate-x-1/2 top-full mt-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold whitespace-nowrap pointer-events-none transition-all shadow-lg ${
+                        isSelected
+                          ? 'bg-cyan-500 text-slate-950 font-black ring-2 ring-white scale-105'
+                          : 'bg-slate-900/95 text-slate-200 border border-slate-700 opacity-90 group-hover:opacity-100 group-hover:scale-105'
+                      }`}
+                    >
+                      <div>{w.name}</div>
+                      <div className="text-[9px] text-cyan-200 opacity-80">{w.riskScore}% Risk</div>
                     </div>
                   </div>
                 );
               })}
-
-              {/* 108 Ambulance Live GPS Marker */}
-              {showAmbulanceOverlay && (
-                <div
-                  style={{ left: '52%', top: '33%' }}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 z-25 pointer-events-none flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-950/95 border border-emerald-500 text-[10px] font-bold text-emerald-200 shadow-xl animate-pulse"
-                >
-                  <Truck className="w-3 h-3 text-emerald-400" aria-hidden="true" />
-                  <span>108 ALS En Route (GGH)</span>
-                </div>
-              )}
             </div>
+
+            {/* Rotating Radar Sweep Beam Overlay */}
+            {showRadarSweep && (
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 pointer-events-none overflow-hidden flex items-center justify-center opacity-30"
+              >
+                <div
+                  className="w-[180%] h-[180%] rounded-full animate-radar-sweep origin-center"
+                  style={{
+                    background:
+                      'conic-gradient(from 0deg, rgba(6, 182, 212, 0.4) 0deg, rgba(6, 182, 212, 0.1) 45deg, transparent 60deg, transparent 360deg)',
+                  }}
+                />
+              </div>
+            )}
 
             {/* Satellite Map Legend Overlay */}
             <div className="absolute bottom-3 left-3 p-2.5 rounded-lg bg-slate-950/95 border border-slate-800 text-[11px] text-slate-200 space-y-1.5 shadow-xl backdrop-blur-sm z-30">
@@ -515,20 +714,39 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-emerald-400/50" aria-hidden="true" />
-                <span>108 Ambulance Preempted Route</span>
+                <span>108 Preempted Corridor</span>
               </div>
             </div>
 
-            {/* Satellite Resolution Badge */}
-            <div className="absolute top-3 right-3 px-2.5 py-1 rounded-md bg-slate-950/90 border border-slate-700 text-[10px] font-mono text-cyan-300 z-30 flex items-center gap-1.5 shadow-lg">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" aria-hidden="true" />
-              <span>ISRO Cartosat / Ortho 0.5m · Live</span>
+            {/* Satellite Resolution & Live Geolocation Pinpoint */}
+            <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5 z-30 pointer-events-none">
+              <div className="px-2.5 py-1 rounded-md bg-slate-950/90 border border-slate-700 text-[10px] font-mono text-cyan-300 flex items-center gap-1.5 shadow-lg">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" aria-hidden="true" />
+                <span>ISRO Cartosat / Ortho 0.5m · Live</span>
+              </div>
+
+              {hoverCoords && (
+                <div className="px-2 py-0.5 rounded bg-slate-950/85 border border-cyan-500/40 text-[9px] font-mono text-slate-300">
+                  <span className="text-cyan-400 font-bold">{hoverCoords.lat}°N, {hoverCoords.lng}°E</span>
+                  {hoverCoords.wardHint && (
+                    <span className="text-slate-400 ml-1.5">[{hoverCoords.wardHint}]</span>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Pan Guidance Indicator when Zoomed */}
+            {zoomLevel > 1 && (
+              <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded bg-slate-950/90 border border-slate-700 text-[10px] text-slate-300 flex items-center gap-1.5 z-30 shadow">
+                <Move className="w-3 h-3 text-cyan-400 animate-bounce" aria-hidden="true" />
+                <span>Click & drag to pan around Guntur</span>
+              </div>
+            )}
           </div>
 
           {/* Autonomous Municipal Actuators Controls */}
           <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-            <div className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center justify-between">
+            <div className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center justify-between font-display">
               <span>GMC Autonomous Actuators (గుంటూరు మునిసిపల్ ఆటోమేషన్)</span>
               <span className="font-mono text-cyan-400 text-[10px] font-bold">REAL-TIME SCADA</span>
             </div>
@@ -541,10 +759,10 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
                     'Green signal locked from Collectorate Road to GGH Guntur Emergency Trauma ICU'
                   )
                 }
-                className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors cursor-pointer text-left"
+                className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors cursor-pointer text-left cyber-panel-hover"
               >
                 <div>
-                  <div className="font-bold text-white">Pre-empt 108 GGH Corridor</div>
+                  <div className="font-bold text-white font-display">Pre-empt 108 GGH Corridor</div>
                   <div className="text-[10px] text-cyan-400 font-telugu">108 అంబులెన్స్ గ్రీన్ వే</div>
                 </div>
                 <ArrowUpRight className="w-3.5 h-3.5 text-cyan-400 shrink-0" aria-hidden="true" />
@@ -558,10 +776,10 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
                     'Sluice overflow gates opened at Arundalpet & Koretipadu Naala junction'
                   )
                 }
-                className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors cursor-pointer text-left"
+                className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors cursor-pointer text-left cyber-panel-hover"
               >
                 <div>
-                  <div className="font-bold text-white">Trigger GMC Sluice Bypass</div>
+                  <div className="font-bold text-white font-display">Trigger GMC Sluice Bypass</div>
                   <div className="text-[10px] text-blue-400 font-telugu">నాలాల వరద గేట్ల ఎత్తివేత</div>
                 </div>
                 <ArrowUpRight className="w-3.5 h-3.5 text-blue-400 shrink-0" aria-hidden="true" />
@@ -575,10 +793,10 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
                     'Tripped 11kV Feeder Line at Brodipet 6/2 to prevent electrocution in waterlogged market'
                   )
                 }
-                className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors cursor-pointer text-left"
+                className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors cursor-pointer text-left cyber-panel-hover"
               >
                 <div>
-                  <div className="font-bold text-white">Trip APCPDCL 11kV Feeder</div>
+                  <div className="font-bold text-white font-display">Trip APCPDCL 11kV Feeder</div>
                   <div className="text-[10px] text-amber-400 font-telugu">విద్యుత్ సరఫరా ఆటో-కట్</div>
                 </div>
                 <ArrowUpRight className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />
@@ -588,15 +806,15 @@ export const LiveOperationsMap: React.FC<LiveOperationsMapProps> = ({
         </section>
 
         {/* Right Column: Ward Telemetry Inspector */}
-        <section aria-labelledby="ward-inspector-heading" className="lg:col-span-4 rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-5 shadow-xl">
+        <section aria-labelledby="ward-inspector-heading" className="lg:col-span-4 rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-5 shadow-xl cyber-panel">
           <div>
             <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
-              <span id="ward-inspector-heading" className="font-bold uppercase tracking-wider text-cyan-400">
+              <span id="ward-inspector-heading" className="font-bold uppercase tracking-wider text-cyan-400 font-mono">
                 Ward Telemetry Inspector
               </span>
               <span className="font-mono text-cyan-400 font-extrabold">{activeWard.code}</span>
             </div>
-            <h3 className="text-lg font-bold text-white">{activeWard.name}</h3>
+            <h3 className="text-lg font-bold text-white font-display">{activeWard.name}</h3>
             <div className="flex items-center gap-2 text-xs text-slate-300 mt-1">
               <span>Population: {(activeWard.population / 1000).toFixed(0)}k</span>
               <span aria-hidden="true">·</span>

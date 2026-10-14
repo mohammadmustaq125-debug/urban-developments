@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { WardTelemetry, TriageResult } from '../types';
 import { PRESET_SCENARIOS, PresetScenario } from '../data/mockData';
 import { useAccessibility } from '../context/AccessibilityContext';
+import { playCyberTone } from '../utils/cyberAudio';
 import {
   AlertTriangle,
   Send,
@@ -56,6 +57,7 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
     setActiveImagePath(preset.imagePath);
     setCustomImageB64(null);
     setErrorMessage(null);
+    playCyberTone('blip', 560, 0.06);
     announce(`Loaded scenario: ${preset.title}`);
   };
 
@@ -66,6 +68,7 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
       reader.onloadend = () => {
         setCustomImageB64(reader.result as string);
         setActiveImagePath(reader.result as string);
+        playCyberTone('blip', 680, 0.08);
         announce('Distress photo uploaded and verified for multimodal analysis');
       };
       reader.readAsDataURL(file);
@@ -75,6 +78,7 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
   const handleRunTriage = async () => {
     setIsLoading(true);
     setErrorMessage(null);
+    playCyberTone('scan', 440, 0.14);
     announce('Initiating Gemini multimodal triage analysis with municipal sensor fusion');
 
     try {
@@ -106,16 +110,19 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
       if (json.data) {
         setTriageResult(json.data);
         if (onTriageComplete) onTriageComplete(json.data);
+        playCyberTone('actuator', 540, 0.12);
         announce(`Triage completed. Urgency is ${json.data.triageLevel}`);
       } else if (json.fallback) {
         setTriageResult(json.fallback);
         if (onTriageComplete) onTriageComplete(json.fallback);
+        playCyberTone('actuator', 540, 0.12);
         announce(`Offline fallback triage completed: Priority ${json.fallback.triageLevel}`);
       } else {
         throw new Error(json.error || 'Failed to triage report');
       }
     } catch (err: any) {
       console.error(err);
+      playCyberTone('warning', 320, 0.2);
       setErrorMessage(err.message || 'Error communicating with Gemini Triage engine');
       announce('Triage encountered an error. Please retry or contact 108.');
     } finally {
@@ -254,9 +261,9 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
         {/* Left: Input parameters */}
         <section
           aria-labelledby="triage-form-heading"
-          className="lg:col-span-7 rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4"
+          className="lg:col-span-7 rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4 cyber-panel"
         >
-          <h3 id="triage-form-heading" className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+          <h3 id="triage-form-heading" className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2 font-display">
             <Radio className="w-4 h-4 text-cyan-400" aria-hidden="true" />
             Distress Report Parameters
           </h3>
@@ -352,10 +359,10 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
         {/* Right: Multimodal Image Attachment Preview */}
         <section
           aria-labelledby="multimodal-evidence-heading"
-          className="lg:col-span-5 rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-3"
+          className="lg:col-span-5 rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-3 cyber-panel"
         >
           <div className="flex items-center justify-between">
-            <h3 id="multimodal-evidence-heading" className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+            <h3 id="multimodal-evidence-heading" className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2 font-display">
               <Upload className="w-4 h-4 text-cyan-400" aria-hidden="true" />
               Multimodal Visual Evidence
             </h3>

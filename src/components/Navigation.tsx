@@ -2,6 +2,7 @@ import React from 'react';
 import { useAccessibility } from '../context/AccessibilityContext';
 import { AccessibilityToolbar } from './AccessibilityToolbar';
 import { ShieldCheck, Play } from 'lucide-react';
+import { playCyberTone } from '../utils/cyberAudio';
 
 export type TabType = 'operations' | 'triage' | 'simulation' | 'iap' | 'jury' | 'tests';
 
@@ -20,6 +21,7 @@ export const Navigation: React.FC<NavigationProps> = ({
 
   const handleTabChange = (tab: TabType, label: string) => {
     setActiveTab(tab);
+    playCyberTone('blip', 560, 0.06);
     announce(`Switched to ${label} tab`);
   };
 
@@ -68,7 +70,7 @@ export const Navigation: React.FC<NavigationProps> = ({
         <button
           type="button"
           onClick={() => handleTabChange('operations', 'Live Operations')}
-          className="text-base md:text-lg font-bold tracking-tight text-white hover:text-cyan-400 transition-colors whitespace-nowrap shrink-0 text-left cursor-pointer flex items-center gap-2"
+          className="text-base md:text-lg font-bold tracking-tight text-white hover:text-cyan-400 transition-colors whitespace-nowrap shrink-0 text-left cursor-pointer flex items-center gap-2 font-display"
         >
           <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" aria-hidden="true" />
           <span>Resilify AI · Guntur</span>
@@ -78,7 +80,7 @@ export const Navigation: React.FC<NavigationProps> = ({
         <nav
           role="tablist"
           aria-label="Disaster Grid Navigation Tabs"
-          className="hidden md:flex items-center gap-1 lg:gap-2 text-xs lg:text-sm font-medium text-slate-300"
+          className="hidden md:flex items-center gap-1 lg:gap-2 text-xs lg:text-sm font-medium text-slate-300 font-display"
         >
           <button
             type="button"
