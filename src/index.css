@@ -16,6 +16,70 @@
   .font-hindi {
     font-family: 'Noto Sans Devanagari', system-ui, sans-serif;
   }
+
+  /* Universal high-visibility keyboard focus for WCAG 2.1 Focus Visible criteria */
+  :focus-visible {
+    outline: 2px solid #38bdf8 !important;
+    outline-offset: 2px !important;
+  }
+}
+
+/* WCAG AAA High-Contrast Mode */
+html.wcag-high-contrast {
+  filter: contrast(1.25);
+  background-color: #000000 !important;
+}
+
+html.wcag-high-contrast body {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+html.wcag-high-contrast .bg-slate-900,
+html.wcag-high-contrast .bg-slate-950,
+html.wcag-high-contrast .bg-slate-900\/80,
+html.wcag-high-contrast .bg-slate-900\/90,
+html.wcag-high-contrast .bg-slate-900\/95 {
+  background-color: #050505 !important;
+  border-color: #ffffff !important;
+}
+
+html.wcag-high-contrast :focus-visible {
+  outline: 3px solid #facc15 !important;
+  outline-offset: 3px !important;
+}
+
+html.wcag-high-contrast button,
+html.wcag-high-contrast input,
+html.wcag-high-contrast textarea,
+html.wcag-high-contrast select {
+  border-color: #ffffff !important;
+}
+
+/* Font Size Scaling for Low-Vision Accessibility */
+html.text-size-large {
+  font-size: 115%;
+}
+
+html.text-size-xlarge {
+  font-size: 130%;
+}
+
+/* Reduced Motion for Vestibular Sensitivity */
+html.reduced-motion *,
+html.reduced-motion *::before,
+html.reduced-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Dyslexia / Legibility Mode */
+html.dyslexia-friendly body {
+  letter-spacing: 0.04em !important;
+  word-spacing: 0.08em !important;
+  line-height: 1.7 !important;
 }
 
 /* Custom scrollbars for data tables and logs */

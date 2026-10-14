@@ -1,4 +1,5 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -36,6 +37,15 @@ async function callGeminiWithRetry<T>(fn: () => Promise<T>, retries = 2, delayMs
     throw err;
   }
 }
+
+// Health check
+app.get('/api/health', (req: Request, res: Response) => {
+  res.json({
+    status: 'ok',
+    hasKey: Boolean(process.env.GEMINI_API_KEY),
+    timestamp: new Date().toISOString(),
+  });
+});
 
 // 1. Citizen & Sensor Emergency Triage
 app.post('/api/triage', async (req: Request, res: Response) => {
@@ -479,12 +489,20 @@ async function setupApp() {
   const isProduction = process.env.NODE_ENV === 'production';
 
   if (!isProduction) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } catch (err) {
+      console.warn('Vite middleware error, falling back to dist static files:', err);
+      app.use(express.static(path.join(__dirname, 'dist')));
+      app.get('*', (req: Request, res: Response) => {
+        res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+      });
+    }
   } else {
     app.use(express.static(path.join(__dirname, 'dist')));
     app.get('*', (req: Request, res: Response) => {
@@ -492,8 +510,9 @@ async function setupApp() {
     });
   }
 
-  app.listen(PORT, () => {
-    console.log(`Resilify AI Server running on port ${PORT}`);
+  const serverPort = Number(process.env.PORT) || 3000;
+  app.listen(serverPort, '0.0.0.0', () => {
+    console.log(`Resilify AI Server running on port ${serverPort}`);
   });
 }
 

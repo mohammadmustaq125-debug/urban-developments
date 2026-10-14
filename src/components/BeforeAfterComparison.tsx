@@ -1,26 +1,26 @@
 import React from 'react';
-import { XCircle, CheckCircle, Clock, Radio, Zap, TrafficCone, ShieldAlert } from 'lucide-react';
+import { XCircle, CheckCircle } from 'lucide-react';
 
 export const BeforeAfterComparison: React.FC = () => {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-6 space-y-5">
+    <section aria-labelledby="comparison-heading" className="rounded-xl border border-slate-800 bg-slate-900 p-6 space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
         <div>
           <span className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-widest">
             Indian Smart Cities Hackathon · Direct System Comparison
           </span>
-          <h2 className="text-lg font-bold text-white mt-0.5">
+          <h2 id="comparison-heading" className="text-lg font-bold text-white mt-0.5">
             Traditional Indian Emergency Response (112 / 108) vs. Resilify AI Grid
           </h2>
         </div>
-        <span className="text-xs text-slate-400 font-mono">Guntur Municipal Corporation & APSDMA</span>
+        <span className="text-xs text-slate-300 font-mono">Guntur Municipal Corporation & APSDMA</span>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Legacy Column */}
         <div className="p-4 rounded-xl bg-slate-950/60 border border-rose-950/40 space-y-3">
-          <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
-            <XCircle className="w-4 h-4 shrink-0" />
+          <div className="flex items-center gap-2 text-rose-300 font-bold text-sm">
+            <XCircle className="w-4 h-4 text-rose-400 shrink-0" aria-hidden="true" />
             <span>Legacy 112 / 108 / APCPDCL Emergency Call Centers</span>
           </div>
 
@@ -47,7 +47,7 @@ export const BeforeAfterComparison: React.FC = () => {
         {/* Resilify AI Column */}
         <div className="p-4 rounded-xl bg-cyan-950/20 border border-cyan-500/40 space-y-3">
           <div className="flex items-center gap-2 text-cyan-300 font-bold text-sm">
-            <CheckCircle className="w-4 h-4 text-cyan-400 shrink-0" />
+            <CheckCircle className="w-4 h-4 text-cyan-400 shrink-0" aria-hidden="true" />
             <span>Resilify AI · Guntur Autonomous Resilience Nervous System</span>
           </div>
 
@@ -71,6 +71,6 @@ export const BeforeAfterComparison: React.FC = () => {
           </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 };

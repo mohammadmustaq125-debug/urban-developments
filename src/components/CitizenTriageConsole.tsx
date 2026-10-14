@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { WardTelemetry, TriageResult } from '../types';
 import { PRESET_SCENARIOS, PresetScenario } from '../data/mockData';
+import { useAccessibility } from '../context/AccessibilityContext';
 import {
   AlertTriangle,
   Send,
@@ -8,14 +9,12 @@ import {
   Volume2,
   VolumeX,
   Shield,
-  Clock,
   Radio,
-  FileCheck,
   CheckCircle,
   Upload,
   Globe,
   MapPin,
-  RefreshCw,
+  FileCheck,
 } from 'lucide-react';
 
 interface CitizenTriageConsoleProps {
@@ -27,20 +26,27 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
   initialWard,
   onTriageComplete,
 }) => {
+  const { language, setLanguage, announce, speakText, stopSpeaking, isSpeaking } = useAccessibility();
+
   const [selectedPreset, setSelectedPreset] = useState<PresetScenario | null>(PRESET_SCENARIOS[0]);
   const [locationText, setLocationText] = useState(
     initialWard ? `${initialWard.name}` : PRESET_SCENARIOS[0].location
   );
   const [categoryText, setCategoryText] = useState(PRESET_SCENARIOS[0].category);
   const [reportDescription, setReportDescription] = useState(PRESET_SCENARIOS[0].description);
-  const [selectedLanguage, setSelectedLanguage] = useState<'Telugu' | 'English' | 'Hindi'>('Telugu');
   const [customImageB64, setCustomImageB64] = useState<string | null>(null);
   const [activeImagePath, setActiveImagePath] = useState<string>(PRESET_SCENARIOS[0].imagePath);
 
   const [isLoading, setIsLoading] = useState(false);
   const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Sync ward if prop changes
+  useEffect(() => {
+    if (initialWard) {
+      setLocationText(initialWard.name);
+    }
+  }, [initialWard]);
 
   const handleSelectPreset = (preset: PresetScenario) => {
     setSelectedPreset(preset);
@@ -50,6 +56,7 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
     setActiveImagePath(preset.imagePath);
     setCustomImageB64(null);
     setErrorMessage(null);
+    announce(`Loaded scenario: ${preset.title}`);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -59,6 +66,7 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
       reader.onloadend = () => {
         setCustomImageB64(reader.result as string);
         setActiveImagePath(reader.result as string);
+        announce('Distress photo uploaded and verified for multimodal analysis');
       };
       reader.readAsDataURL(file);
     }
@@ -67,16 +75,19 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
   const handleRunTriage = async () => {
     setIsLoading(true);
     setErrorMessage(null);
+    announce('Initiating Gemini multimodal triage analysis with municipal sensor fusion');
 
     try {
-      const telemetry = selectedPreset ? selectedPreset.sensorTelemetry : {
-        waterLevelCm: 45,
-        gridLoadPct: 88,
-        aqi: 95,
-        trafficDelayIndex: 2.5,
-        ambientTempC: 30,
-        windSpeedKmh: 20,
-      };
+      const telemetry = selectedPreset
+        ? selectedPreset.sensorTelemetry
+        : {
+            waterLevelCm: 45,
+            gridLoadPct: 88,
+            aqi: 95,
+            trafficDelayIndex: 2.5,
+            ambientTempC: 30,
+            windSpeedKmh: 20,
+          };
 
       const res = await fetch('/api/triage', {
         method: 'POST',
@@ -87,7 +98,7 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
           category: categoryText,
           sensorTelemetry: telemetry,
           imageB64: customImageB64,
-          language: selectedLanguage,
+          language: language,
         }),
       });
 
@@ -95,14 +106,18 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
       if (json.data) {
         setTriageResult(json.data);
         if (onTriageComplete) onTriageComplete(json.data);
+        announce(`Triage completed. Urgency is ${json.data.triageLevel}`);
       } else if (json.fallback) {
         setTriageResult(json.fallback);
+        if (onTriageComplete) onTriageComplete(json.fallback);
+        announce(`Offline fallback triage completed: Priority ${json.fallback.triageLevel}`);
       } else {
         throw new Error(json.error || 'Failed to triage report');
       }
     } catch (err: any) {
       console.error(err);
       setErrorMessage(err.message || 'Error communicating with Gemini Triage engine');
+      announce('Triage encountered an error. Please retry or contact 108.');
     } finally {
       setIsLoading(false);
     }
@@ -112,35 +127,11 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
     if (!triageResult?.citizenAdvice) return;
 
     if (isSpeaking) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-      return;
-    }
-
-    const textToSpeak = `${triageResult.citizenAdvice}. ${triageResult.survivalSteps.join('. ')}`;
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    
-    // Set regional voice code
-    if (selectedLanguage === 'Telugu') {
-      utterance.lang = 'te-IN';
-    } else if (selectedLanguage === 'Hindi') {
-      utterance.lang = 'hi-IN';
+      stopSpeaking();
     } else {
-      utterance.lang = 'en-IN';
+      const textToSpeak = `${triageResult.citizenAdvice}. ${triageResult.survivalSteps.join('. ')}`;
+      speakText(textToSpeak, language);
     }
-
-    const voices = window.speechSynthesis.getVoices();
-    const matchingVoice = voices.find((v) => v.lang.startsWith(utterance.lang.slice(0, 2)));
-    if (matchingVoice) {
-      utterance.voice = matchingVoice;
-    }
-
-    utterance.rate = 0.95;
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-
-    setIsSpeaking(true);
-    window.speechSynthesis.speak(utterance);
   };
 
   return (
@@ -156,34 +147,47 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
           <h2 className="text-xl font-bold text-white tracking-tight">
             GMC Emergency Distress Intake & Multilingual AI Dispatch
           </h2>
-          <p className="text-xs md:text-sm text-slate-400 mt-1 max-w-2xl">
+          <p className="text-xs md:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
             Citizens in Guntur can report waterlogging, 11kV electrical wire sparks, or medical blocks in Telugu, Hindi, or English. Gemini 3.8 Flash verifies the scene and coordinates immediate 108 & SDRF dispatch.
           </p>
         </div>
 
-        {/* Language Selection */}
+        {/* Vernacular Language Selector */}
         <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800 shrink-0">
-          <Globe className="w-4 h-4 text-cyan-400" />
-          <span className="text-xs text-slate-300 font-medium">భాష / Language:</span>
+          <Globe className="w-4 h-4 text-cyan-400" aria-hidden="true" />
+          <label htmlFor="triage-lang-select" className="text-xs text-slate-300 font-medium">
+            భాష / Language:
+          </label>
           <select
-            value={selectedLanguage}
-            onChange={(e: any) => setSelectedLanguage(e.target.value)}
+            id="triage-lang-select"
+            value={language}
+            onChange={(e: any) => {
+              const newLang = e.target.value;
+              setLanguage(newLang);
+              announce(`Selected language: ${newLang}`);
+            }}
             className="bg-transparent text-xs font-bold text-cyan-300 focus:outline-none cursor-pointer"
           >
-            <option value="Telugu" className="bg-slate-900 text-white font-telugu">తెలుగు (Telugu)</option>
-            <option value="English" className="bg-slate-900 text-white">English (India)</option>
-            <option value="Hindi" className="bg-slate-900 text-white font-hindi">हिंदी (Hindi)</option>
+            <option value="Telugu" className="bg-slate-900 text-white font-telugu">
+              తెలుగు (Telugu)
+            </option>
+            <option value="English" className="bg-slate-900 text-white">
+              English (India)
+            </option>
+            <option value="Hindi" className="bg-slate-900 text-white font-hindi">
+              हिंदी (Hindi)
+            </option>
           </select>
         </div>
       </div>
 
       {/* Preset Scenario Selector */}
-      <div className="space-y-2">
+      <section aria-labelledby="preset-scenarios-heading" className="space-y-2">
         <div className="flex items-center justify-between text-xs text-slate-400">
-          <span className="font-semibold uppercase tracking-wider text-slate-300">
-            Quick Scenarios (Click any card to load or run in 1 click)
-          </span>
-          <span className="text-[11px] text-cyan-400 font-mono">3 Realistic Civic Disasters</span>
+          <h3 id="preset-scenarios-heading" className="font-semibold uppercase tracking-wider text-slate-300">
+            Quick Guntur Disaster Scenarios (1-Click Load & Test)
+          </h3>
+          <span className="text-[11px] text-cyan-400 font-mono">3 Verified Municipal Incidents</span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {PRESET_SCENARIOS.map((preset) => {
@@ -191,8 +195,17 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
             return (
               <div
                 key={preset.id}
+                role="button"
+                tabIndex={0}
+                aria-pressed={isSelected}
                 onClick={() => handleSelectPreset(preset)}
-                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between group ${
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleSelectPreset(preset);
+                  }
+                }}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between group focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
                   isSelected
                     ? 'border-cyan-500 bg-cyan-950/40 ring-1 ring-cyan-500/50 shadow-md'
                     : 'border-slate-800 bg-slate-900/80 hover:border-slate-700'
@@ -224,6 +237,7 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
                       handleSelectPreset(preset);
                       setTimeout(() => handleRunTriage(), 50);
                     }}
+                    aria-label={`Execute 1-Click Triage for ${preset.title}`}
                     className="px-2.5 py-1 rounded bg-cyan-500/20 hover:bg-cyan-400 hover:text-slate-950 text-cyan-300 font-semibold text-[11px] transition-all cursor-pointer shrink-0"
                   >
                     1-Click Triage ›
@@ -233,106 +247,130 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
             );
           })}
         </div>
-      </div>
+      </section>
 
       {/* Input Form & Image Preview Split */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left: Input parameters */}
-        <div className="lg:col-span-7 rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-            <Radio className="w-4 h-4 text-cyan-400" />
+        <section
+          aria-labelledby="triage-form-heading"
+          className="lg:col-span-7 rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4"
+        >
+          <h3 id="triage-form-heading" className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+            <Radio className="w-4 h-4 text-cyan-400" aria-hidden="true" />
             Distress Report Parameters
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">
-                Incident Location / Ward
+              <label htmlFor="triage-location-input" className="block text-xs font-semibold text-slate-200 mb-1">
+                Incident Location / Ward (ఘటనా స్థలం)
               </label>
               <div className="relative">
                 <input
+                  id="triage-location-input"
+                  name="location"
                   type="text"
                   value={locationText}
                   onChange={(e) => setLocationText(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
-                  placeholder="e.g. Ward 7 Lower Arterial"
+                  className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                  placeholder="e.g. Brodipet 4th Lane Underpass"
+                  required
                 />
-                <MapPin className="w-3.5 h-3.5 text-slate-500 absolute right-3 top-2.5" />
+                <MapPin className="w-3.5 h-3.5 text-slate-500 absolute right-3 top-2.5" aria-hidden="true" />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">
-                Declared Hazard Category
+              <label htmlFor="triage-hazard-category" className="block text-xs font-semibold text-slate-200 mb-1">
+                Hazard Category (ప్రమాద రకం)
               </label>
               <input
+                id="triage-hazard-category"
+                name="category"
                 type="text"
                 value={categoryText}
                 onChange={(e) => setCategoryText(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                placeholder="e.g. Flash Flood, Transformer Explosion"
+                className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+                placeholder="e.g. Flash Flood, Snapped Wire, 108 Block"
+                required
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">
-              Distress Feed / Citizen Eyewitness Narrative
+            <label htmlFor="triage-narrative-input" className="block text-xs font-semibold text-slate-200 mb-1">
+              Distress Feed / Citizen Narrative (వివరాలు / వివరణ)
             </label>
             <textarea
+              id="triage-narrative-input"
+              name="description"
               rows={4}
               value={reportDescription}
               onChange={(e) => setReportDescription(e.target.value)}
-              className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 leading-relaxed"
-              placeholder="Describe what is visible, number of people trapped, electrical hazards, water levels..."
+              className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 leading-relaxed"
+              placeholder="Describe what is visible, water depth, trapped citizens, electrical sparks..."
+              required
             />
           </div>
 
           {/* Action Button */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-slate-300">
               Evaluated by <span className="font-semibold text-white">Gemini 3.8 Flash</span> with IoT telemetry fusion
             </div>
             <button
+              type="button"
               onClick={handleRunTriage}
               disabled={isLoading}
               className="px-5 py-2.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 active:scale-98 text-slate-950 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-50"
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Triaging Incident...
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  <span>Triaging Incident...</span>
                 </>
               ) : (
                 <>
-                  <Send className="w-4 h-4" />
-                  Execute Gemini Triage & Dispatch
+                  <Send className="w-4 h-4" aria-hidden="true" />
+                  <span>Execute Gemini Triage & Dispatch (ట్రియాజ్ చేయండి)</span>
                 </>
               )}
             </button>
           </div>
 
           {errorMessage && (
-            <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-800 text-rose-300 text-xs">
+            <div
+              role="alert"
+              className="p-3 rounded-lg bg-rose-950/60 border border-rose-600 text-rose-200 text-xs font-medium"
+            >
               {errorMessage}
             </div>
           )}
-        </div>
+        </section>
 
         {/* Right: Multimodal Image Attachment Preview */}
-        <div className="lg:col-span-5 rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-3">
+        <section
+          aria-labelledby="multimodal-evidence-heading"
+          className="lg:col-span-5 rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-3"
+        >
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <Upload className="w-4 h-4 text-cyan-400" />
+            <h3 id="multimodal-evidence-heading" className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <Upload className="w-4 h-4 text-cyan-400" aria-hidden="true" />
               Multimodal Visual Evidence
             </h3>
-            <label className="text-xs text-cyan-400 hover:text-cyan-300 cursor-pointer font-medium">
+            <label
+              htmlFor="multimodal-file-input"
+              className="text-xs text-cyan-400 hover:text-cyan-300 cursor-pointer font-semibold underline"
+            >
               Upload Photo
               <input
+                id="multimodal-file-input"
+                name="photo"
                 type="file"
                 accept="image/*"
                 onChange={handleImageUpload}
-                className="hidden"
+                className="sr-only"
               />
             </label>
           </div>
@@ -340,24 +378,28 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
           <div className="relative aspect-4/3 rounded-lg border border-slate-800 overflow-hidden bg-slate-950">
             <img
               src={activeImagePath}
-              alt="Hazard Scene Analysis"
-              referrerPolicy="no-referrer"
+              alt={`Multimodal hazard evidence for ${selectedPreset?.title || 'disaster scene in Guntur'}`}
               className="w-full h-full object-cover"
             />
             <div className="absolute bottom-2 left-2 right-2 px-2.5 py-1.5 rounded bg-slate-950/85 backdrop-blur-xs border border-slate-800 text-[11px] text-slate-300 flex items-center justify-between">
               <span>Multimodal Vision Feed</span>
-              <span className="font-mono text-cyan-400 text-[10px]">VERIFIED ASSET</span>
+              <span className="font-mono text-cyan-400 text-[10px] font-bold">VERIFIED EVIDENCE</span>
             </div>
           </div>
           <div className="text-[11px] text-slate-400 leading-normal">
-            Gemini parses high-resolution visual cues: standing water depth, electrical arcing, structural fissures, and vehicle blockages to confirm distress authenticity.
+            Gemini parses visual evidence: standing water depth, electrical arcing, structural fissures, and vehicle blockages to confirm distress authenticity.
           </div>
-        </div>
+        </section>
       </div>
 
-      {/* Triage Output Card */}
+      {/* Triage Output Card with aria-live */}
       {triageResult && (
-        <div className="rounded-xl border border-cyan-500/40 bg-slate-900/95 p-6 space-y-6 shadow-2xl animate-in fade-in duration-300">
+        <section
+          role="region"
+          aria-live="polite"
+          aria-label="Disaster Triage Evaluation Results"
+          className="rounded-xl border border-cyan-500/40 bg-slate-900/95 p-6 space-y-6 shadow-2xl animate-in fade-in duration-300"
+        >
           {/* Top Triage Priority Banner */}
           <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
             <div>
@@ -365,30 +407,30 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
                 <span
                   className={`text-xs font-bold px-3 py-1 rounded font-mono ${
                     triageResult.triageLevel === 'CRITICAL_P1'
-                      ? 'bg-rose-500/20 text-rose-400 border border-rose-500/50'
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/60 font-black'
                       : triageResult.triageLevel === 'URGENT_P2'
-                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50'
-                      : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/60 font-black'
+                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/60 font-black'
                   }`}
                 >
                   {triageResult.triageLevel.replace('_', ' ')}
                 </span>
-                <span className="text-xs text-slate-400">
-                  Severity Score:{' '}
+                <span className="text-xs text-slate-300">
+                  Severity:{' '}
                   <span className="font-mono font-bold text-white tabular-nums">
                     {triageResult.severityScore}/100
                   </span>
                 </span>
                 <span aria-hidden="true" className="text-slate-600">·</span>
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-300">
                   Confidence:{' '}
                   <span className="font-mono font-bold text-cyan-400 tabular-nums">
                     {triageResult.confidencePercent}%
                   </span>
                 </span>
                 <span aria-hidden="true" className="text-slate-600">·</span>
-                <span className="text-xs text-slate-400">
-                  Impact Radius:{' '}
+                <span className="text-xs text-slate-300">
+                  Danger Radius:{' '}
                   <span className="font-mono font-bold text-white tabular-nums">
                     {triageResult.impactRadiusMeters}m
                   </span>
@@ -397,41 +439,32 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
               <h3 className="text-lg font-bold text-white mt-2">
                 {triageResult.hazardCategory}
               </h3>
-              <p className="text-sm text-slate-300 mt-1 max-w-3xl">
+              <p className="text-sm text-slate-200 mt-1 max-w-3xl leading-relaxed">
                 {triageResult.incidentSummary}
               </p>
             </div>
 
-            {/* Read Aloud Button & Wave Animation */}
+            {/* Read Aloud Button */}
             <div className="flex items-center gap-3">
-              {isSpeaking && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-950/80 border border-cyan-500/50 text-[11px] font-mono text-cyan-300">
-                  <div className="flex items-end gap-0.5 h-3">
-                    <span className="w-1 bg-cyan-400 rounded-full animate-bounce h-2" style={{ animationDelay: '0ms' }} />
-                    <span className="w-1 bg-cyan-400 rounded-full animate-bounce h-3" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1 bg-cyan-400 rounded-full animate-bounce h-1.5" style={{ animationDelay: '300ms' }} />
-                    <span className="w-1 bg-cyan-400 rounded-full animate-bounce h-2.5" style={{ animationDelay: '450ms' }} />
-                  </div>
-                  <span>Broadcasting Audio</span>
-                </div>
-              )}
               <button
+                type="button"
                 onClick={handleSpeakAdvice}
+                aria-label={isSpeaking ? 'Stop speaking emergency advice' : `Play emergency voice broadcast in ${language}`}
                 className={`px-4 py-2 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm ${
                   isSpeaking
-                    ? 'bg-rose-950 border-rose-500 text-rose-300'
-                    : 'bg-cyan-500 hover:bg-cyan-400 border-cyan-400 text-slate-950 font-bold'
+                    ? 'bg-rose-950 border-rose-500 text-rose-200 font-bold animate-pulse'
+                    : 'bg-cyan-400 hover:bg-cyan-300 border-cyan-400 text-slate-950 font-bold'
                 }`}
               >
                 {isSpeaking ? (
                   <>
-                    <VolumeX className="w-4 h-4" />
-                    Stop Voice Broadcast
+                    <VolumeX className="w-4 h-4" aria-hidden="true" />
+                    <span>ఆపు (Stop Audio)</span>
                   </>
                 ) : (
                   <>
-                    <Volume2 className="w-4 h-4 text-slate-950" />
-                    Play Voice Broadcast ({selectedLanguage})
+                    <Volume2 className="w-4 h-4 fill-current" aria-hidden="true" />
+                    <span>వాయిస్ ప్రసారం ({language})</span>
                   </>
                 )}
               </button>
@@ -442,21 +475,21 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
           <div className="p-4 rounded-xl border border-cyan-500/30 bg-cyan-950/20 space-y-2">
             <div className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center justify-between">
               <span className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-cyan-400" />
-                Citizen Safety Directive ({selectedLanguage})
+                <Shield className="w-4 h-4 text-cyan-400" aria-hidden="true" />
+                Citizen Safety Directive ({language})
               </span>
               <span className="font-mono text-[10px] text-cyan-400">
-                {selectedLanguage === 'Telugu' ? 'తెలుగు రక్షణ సూచనలు' : selectedLanguage === 'Hindi' ? 'सुरक्षा निर्देश' : 'OFFICIAL RESCUE ADVISORY'}
+                {language === 'Telugu' ? 'తెలుగు రక్షణ సూచనలు' : language === 'Hindi' ? 'सुरक्षा निर्देश' : 'OFFICIAL RESCUE ADVISORY'}
               </span>
             </div>
-            <div className={`text-sm md:text-base font-semibold text-white leading-relaxed ${selectedLanguage === 'Telugu' ? 'font-telugu' : selectedLanguage === 'Hindi' ? 'font-hindi' : ''}`}>
+            <div className={`text-sm md:text-base font-semibold text-white leading-relaxed ${language === 'Telugu' ? 'font-telugu' : language === 'Hindi' ? 'font-hindi' : ''}`}>
               "{triageResult.citizenAdvice}"
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-2">
               {triageResult.survivalSteps.map((step, idx) => (
                 <div
                   key={idx}
-                  className={`p-2.5 rounded bg-slate-900/80 border border-slate-800 text-xs text-slate-200 leading-relaxed ${selectedLanguage === 'Telugu' ? 'font-telugu text-[13px]' : selectedLanguage === 'Hindi' ? 'font-hindi' : ''}`}
+                  className={`p-2.5 rounded bg-slate-900/80 border border-slate-800 text-xs text-slate-200 leading-relaxed ${language === 'Telugu' ? 'font-telugu text-[13px]' : language === 'Hindi' ? 'font-hindi' : ''}`}
                 >
                   <span className="font-mono text-cyan-400 font-bold mr-1">0{idx + 1}.</span> {step}
                 </div>
@@ -466,10 +499,10 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
 
           {/* Autonomous Municipal Grid Actions Executed */}
           <div>
-            <div className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-emerald-400" />
-              Autonomous Grid Interventions Executed Without Human Delay
-            </div>
+            <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider mb-2 flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-emerald-400" aria-hidden="true" />
+              Autonomous Municipal Interventions Executed Without Delay
+            </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {triageResult.autonomousGridActions.map((action, idx) => (
                 <div
@@ -478,9 +511,9 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
                 >
                   <div>
                     <div className="text-xs font-bold text-white">{action.subsystem}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">{action.actionTaken}</div>
+                    <div className="text-xs text-slate-300 mt-0.5">{action.actionTaken}</div>
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800/80 uppercase shrink-0">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 uppercase shrink-0 font-bold">
                     {action.status}
                   </span>
                 </div>
@@ -490,17 +523,17 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
 
           {/* Resource Allocation Dispatch Matrix */}
           <div>
-            <div className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+            <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider mb-2">
               Dispatched Emergency Resource Units
-            </div>
+            </h4>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border border-slate-800 rounded-lg overflow-hidden">
-                <thead className="bg-slate-950 text-slate-400 font-mono uppercase text-[11px]">
+                <thead className="bg-slate-950 text-slate-300 font-mono uppercase text-[11px]">
                   <tr>
-                    <th className="py-2 px-3">Unit Type</th>
-                    <th className="py-2 px-3 text-right">Units Dispatched</th>
-                    <th className="py-2 px-3 text-right">Estimated Arrival</th>
-                    <th className="py-2 px-3">Tactical Objective</th>
+                    <th scope="col" className="py-2 px-3">Unit Type</th>
+                    <th scope="col" className="py-2 px-3 text-right">Units</th>
+                    <th scope="col" className="py-2 px-3 text-right">ETA</th>
+                    <th scope="col" className="py-2 px-3">Tactical Objective</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 bg-slate-900">
@@ -513,7 +546,7 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
                       <td className="py-2.5 px-3 text-right font-mono text-emerald-400 tabular-nums">
                         {alloc.etaMinutes} min
                       </td>
-                      <td className="py-2.5 px-3 text-slate-300">{alloc.purpose}</td>
+                      <td className="py-2.5 px-3 text-slate-200">{alloc.purpose}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -532,7 +565,7 @@ export const CitizenTriageConsole: React.FC<CitizenTriageConsoleProps> = ({
               <span className="text-slate-300">{triageResult.evacuationZone}</span>
             </div>
           </div>
-        </div>
+        </section>
       )}
     </div>
   );

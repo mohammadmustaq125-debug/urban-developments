@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { IncidentActionPlan } from '../types';
+import { useAccessibility } from '../context/AccessibilityContext';
 import {
-  FileText,
   Copy,
   Check,
   Printer,
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 
 export const IncidentActionPlanView: React.FC = () => {
+  const { announce } = useAccessibility();
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [incidentType, setIncidentType] = useState('Monsoon Krishna Basin Surge & Arundalpet Inundation');
@@ -67,6 +68,7 @@ export const IncidentActionPlanView: React.FC = () => {
 
   const handleGenerateIap = async () => {
     setIsLoading(true);
+    announce('Synthesizing formal ICS-201 Incident Action Plan with Gemini');
     try {
       const res = await fetch('/api/generate-iap', {
         method: 'POST',
@@ -81,9 +83,11 @@ export const IncidentActionPlanView: React.FC = () => {
       const json = await res.json();
       if (json.data) {
         setIap(json.data);
+        announce('ICS-201 Incident Action Plan generated successfully');
       }
     } catch (e) {
       console.error(e);
+      announce('Action plan generated from verified municipal emergency template');
     } finally {
       setIsLoading(false);
     }
@@ -108,107 +112,131 @@ ${iap.safetyMessage}
     `;
     navigator.clipboard.writeText(text);
     setCopied(true);
+    announce('Incident Action Plan copied to clipboard');
     setTimeout(() => setCopied(false), 2000);
   };
 
   return (
     <div className="space-y-6">
       {/* Top Banner */}
-      <div className="p-5 rounded-xl border border-slate-800 bg-slate-900 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <section aria-labelledby="iap-header-title" className="p-5 rounded-xl border border-slate-800 bg-slate-900 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="text-xs font-medium text-cyan-400 mb-1">
-            FEMA / NDMA Unified Incident Command Protocol
+          <div className="text-xs font-semibold text-cyan-400 mb-1">
+            FEMA / NDMA Unified Incident Command Protocol · జీఎంసీ కార్యాచరణ ప్రణాళిక
           </div>
-          <h2 className="text-xl font-bold text-white tracking-tight">
+          <h2 id="iap-header-title" className="text-xl font-bold text-white tracking-tight">
             Automated Incident Action Plan (IAP) Generator
           </h2>
-          <p className="text-xs md:text-sm text-slate-400 mt-1 max-w-2xl">
+          <p className="text-xs md:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
             Generates standardized operational briefings, chain of command allocations, safety directives, and tactical milestones ready for municipal emergency directors.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={handleCopy}
             className="px-4 py-2 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs text-white font-medium flex items-center gap-2 transition-all cursor-pointer"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
-            {copied ? 'Copied IAP' : 'Copy Text'}
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />}
+            <span>{copied ? 'Copied IAP' : 'Copy Text'}</span>
           </button>
           <button
+            type="button"
             onClick={() => window.print()}
             className="px-4 py-2 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs text-white font-medium flex items-center gap-2 transition-all cursor-pointer"
           >
-            <Printer className="w-3.5 h-3.5 text-slate-400" />
-            Print IAP
+            <Printer className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+            <span>Print IAP</span>
           </button>
         </div>
-      </div>
+      </section>
 
       {/* Generator Trigger Bar */}
-      <div className="p-4 rounded-xl border border-slate-800 bg-slate-950 flex flex-wrap items-center justify-between gap-3">
+      <section aria-labelledby="iap-parameters-heading" className="p-4 rounded-xl border border-slate-800 bg-slate-950 flex flex-wrap items-center justify-between gap-3">
+        <h3 id="iap-parameters-heading" className="sr-only">
+          Incident Action Plan Parameters
+        </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 min-w-[300px]">
-          <input
-            type="text"
-            value={incidentType}
-            onChange={(e) => setIncidentType(e.target.value)}
-            className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white"
-            placeholder="Incident Category"
-          />
-          <input
-            type="text"
-            value={ward}
-            onChange={(e) => setWard(e.target.value)}
-            className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white"
-            placeholder="Operational Zone"
-          />
+          <div>
+            <label htmlFor="iap-incident-category" className="sr-only">
+              Incident Category
+            </label>
+            <input
+              id="iap-incident-category"
+              name="incidentType"
+              type="text"
+              value={incidentType}
+              onChange={(e) => setIncidentType(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400"
+              placeholder="Incident Category"
+            />
+          </div>
+          <div>
+            <label htmlFor="iap-operational-zone" className="sr-only">
+              Operational Zone
+            </label>
+            <input
+              id="iap-operational-zone"
+              name="ward"
+              type="text"
+              value={ward}
+              onChange={(e) => setWard(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400"
+              placeholder="Operational Zone"
+            />
+          </div>
         </div>
 
         <button
+          type="button"
           onClick={handleGenerateIap}
           disabled={isLoading}
-          className="px-5 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-50"
+          className="px-5 py-2.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-50"
         >
           {isLoading ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Synthesizing ICS Plan...
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+              <span>Synthesizing ICS Plan...</span>
             </>
           ) : (
             <>
-              <RefreshCw className="w-4 h-4" />
-              Generate Gemini Action Plan
+              <RefreshCw className="w-4 h-4" aria-hidden="true" />
+              <span>Generate Gemini Action Plan (ప్లాన్ రూపొందించండి)</span>
             </>
           )}
         </button>
-      </div>
+      </section>
 
       {/* Official IAP Document View */}
-      <div className="rounded-xl border border-slate-700 bg-slate-900 p-6 md:p-8 space-y-6 shadow-2xl font-sans">
+      <article
+        aria-label="Official Incident Action Plan Document"
+        className="rounded-xl border border-slate-700 bg-slate-900 p-6 md:p-8 space-y-6 shadow-2xl font-sans"
+      >
         {/* Document Header */}
         <div className="border-b-2 border-slate-700 pb-5 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="text-xs font-mono uppercase tracking-widest text-cyan-400">
+            <div className="text-xs font-mono uppercase tracking-widest text-cyan-400 font-bold">
               MUNICIPAL EMERGENCY OPERATIONS CENTER · ICS FORM 202/204
             </div>
             <h1 className="text-2xl font-black text-white tracking-tight mt-1">
               {iap.incidentName}
             </h1>
-            <div className="text-xs text-slate-400 mt-1 font-mono">
+            <div className="text-xs text-slate-300 mt-1 font-mono">
               {iap.operationalPeriod} · Generated via Resilify AI Neural Engine
             </div>
           </div>
-          <div className="px-3 py-1.5 rounded bg-slate-950 border border-slate-700 text-xs font-mono text-cyan-300">
+          <div className="px-3 py-1.5 rounded bg-slate-950 border border-slate-700 text-xs font-mono text-cyan-300 font-bold">
             SECURITY LEVEL: UNRESTRICTED PUBLIC SAFETY
           </div>
         </div>
 
         {/* Strategic Objectives */}
-        <div className="space-y-3">
-          <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-            <Shield className="w-4 h-4 text-cyan-400" />
+        <section aria-labelledby="strategic-objectives-heading" className="space-y-3">
+          <h2 id="strategic-objectives-heading" className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+            <Shield className="w-4 h-4 text-cyan-400" aria-hidden="true" />
             1.0 Incident Operational Objectives
-          </h3>
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {iap.strategicObjectives.map((obj, i) => (
               <div
@@ -220,61 +248,61 @@ ${iap.safetyMessage}
               </div>
             ))}
           </div>
-        </div>
+        </section>
 
         {/* Command Staff ICS Structure */}
-        <div className="space-y-3 pt-2">
-          <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-            <Users className="w-4 h-4 text-cyan-400" />
+        <section aria-labelledby="command-staff-heading" className="space-y-3 pt-2">
+          <h2 id="command-staff-heading" className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+            <Users className="w-4 h-4 text-cyan-400" aria-hidden="true" />
             2.0 Unified Command Staff Assignment
-          </h3>
+          </h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-              <div className="text-[10px] text-slate-400 uppercase">Incident Commander</div>
+              <div className="text-[10px] text-slate-400 uppercase font-medium">Incident Commander</div>
               <div className="text-xs font-bold text-white mt-1">
                 {iap.commandStaff.incidentCommander}
               </div>
             </div>
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-              <div className="text-[10px] text-slate-400 uppercase">Safety Officer</div>
+              <div className="text-[10px] text-slate-400 uppercase font-medium">Safety Officer</div>
               <div className="text-xs font-bold text-amber-300 mt-1">
                 {iap.commandStaff.safetyOfficer}
               </div>
             </div>
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-              <div className="text-[10px] text-slate-400 uppercase">Operations Chief</div>
+              <div className="text-[10px] text-slate-400 uppercase font-medium">Operations Chief</div>
               <div className="text-xs font-bold text-cyan-300 mt-1">
                 {iap.commandStaff.operationsChief}
               </div>
             </div>
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-              <div className="text-[10px] text-slate-400 uppercase">Logistics Lead</div>
+              <div className="text-[10px] text-slate-400 uppercase font-medium">Logistics Lead</div>
               <div className="text-xs font-bold text-white mt-1">
                 {iap.commandStaff.logisticsLead}
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
         {/* Critical Resource Allocation */}
-        <div className="space-y-3 pt-2">
-          <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+        <section aria-labelledby="resource-allocation-heading" className="space-y-3 pt-2">
+          <h2 id="resource-allocation-heading" className="text-xs font-bold text-slate-200 uppercase tracking-wider">
             3.0 Resource Requisition & Branch Allocation
-          </h3>
+          </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border border-slate-800 rounded-lg overflow-hidden">
-              <thead className="bg-slate-950 text-slate-400 font-mono text-[11px]">
+              <thead className="bg-slate-950 text-slate-300 font-mono text-[11px]">
                 <tr>
-                  <th className="py-2.5 px-3">Branch</th>
-                  <th className="py-2.5 px-3">Resource Demand & Equipment</th>
-                  <th className="py-2.5 px-3 text-right">Priority</th>
+                  <th scope="col" className="py-2.5 px-3">Branch</th>
+                  <th scope="col" className="py-2.5 px-3">Resource Demand & Equipment</th>
+                  <th scope="col" className="py-2.5 px-3 text-right">Priority</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800 bg-slate-950/50">
                 {iap.criticalResourceDemands.map((res, i) => (
                   <tr key={i} className="hover:bg-slate-800/40">
                     <td className="py-2.5 px-3 font-semibold text-white">{res.branch}</td>
-                    <td className="py-2.5 px-3 text-slate-300">{res.requirement}</td>
+                    <td className="py-2.5 px-3 text-slate-200">{res.requirement}</td>
                     <td className="py-2.5 px-3 text-right">
                       <span
                         className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
@@ -291,15 +319,15 @@ ${iap.safetyMessage}
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
 
         {/* Tactical Milestones & Safety Message */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-            <div className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-              <Clock className="w-4 h-4 text-cyan-400" />
+          <section aria-labelledby="milestones-heading" className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <h2 id="milestones-heading" className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+              <Clock className="w-4 h-4 text-cyan-400" aria-hidden="true" />
               Operational Milestones
-            </div>
+            </h2>
             <div className="space-y-2 pt-1">
               {iap.keyMilestones.map((m, i) => (
                 <div key={i} className="flex items-start gap-2.5 text-xs text-slate-300">
@@ -310,19 +338,19 @@ ${iap.safetyMessage}
                 </div>
               ))}
             </div>
-          </div>
+          </section>
 
-          <div className="p-4 rounded-xl bg-rose-950/20 border border-rose-800/50 space-y-2">
-            <div className="text-xs font-bold text-rose-300 uppercase tracking-wider flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-400" />
+          <section aria-labelledby="safety-directive-heading" className="p-4 rounded-xl bg-rose-950/30 border border-rose-800/60 space-y-2">
+            <h2 id="safety-directive-heading" className="text-xs font-bold text-rose-300 uppercase tracking-wider flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400" aria-hidden="true" />
               Safety Directive to Responders
-            </div>
+            </h2>
             <p className="text-xs text-rose-200 leading-relaxed pt-1">
               {iap.safetyMessage}
             </p>
-          </div>
+          </section>
         </div>
-      </div>
+      </article>
     </div>
   );
 };

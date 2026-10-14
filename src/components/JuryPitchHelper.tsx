@@ -1,39 +1,52 @@
 import React, { useState } from 'react';
-import { Sparkles, X, ChevronUp, ChevronDown, CheckCircle, HelpCircle, Award } from 'lucide-react';
+import { X, Award } from 'lucide-react';
 
 export const JuryPitchHelper: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'pitch' | 'qa' | 'keywords'>('pitch');
 
   return (
-    <div className="fixed bottom-4 right-4 z-40">
+    <aside aria-label="Presenter and Jury Quick Reference Widget" className="fixed bottom-4 right-4 z-40">
       {!isOpen ? (
         <button
+          type="button"
           onClick={() => setIsOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-cyan-400 text-slate-950 font-bold text-xs shadow-xl hover:bg-cyan-300 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+          aria-expanded={false}
+          aria-label="Open Jury Cheat Sheet and 30-Second Pitch Guide"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-cyan-400 text-slate-950 font-bold text-xs shadow-xl hover:bg-cyan-300 hover:scale-105 active:scale-95 transition-all cursor-pointer ring-2 ring-cyan-300/40"
         >
-          <Award className="w-4 h-4" />
+          <Award className="w-4 h-4" aria-hidden="true" />
           <span>Jury Cheat Sheet & 30s Pitch</span>
         </button>
       ) : (
-        <div className="w-96 max-w-[calc(100vw-2rem)] bg-slate-900 border border-cyan-500/50 rounded-2xl shadow-2xl p-4 text-left space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="presenter-cheat-sheet-title"
+          className="w-96 max-w-[calc(100vw-2rem)] bg-slate-900 border border-cyan-500/50 rounded-2xl shadow-2xl p-4 text-left space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-200"
+        >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-slate-800 pb-2">
             <div className="flex items-center gap-2 text-xs font-bold text-white">
-              <Award className="w-4 h-4 text-cyan-400" />
-              <span>Presenter & Jury Quick Reference</span>
+              <Award className="w-4 h-4 text-cyan-400" aria-hidden="true" />
+              <h2 id="presenter-cheat-sheet-title">Presenter & Jury Quick Reference</h2>
             </div>
             <button
+              type="button"
               onClick={() => setIsOpen(false)}
+              aria-label="Close Jury Reference Widget"
               className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800 transition-colors cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
 
           {/* Segmented Switch */}
-          <div className="flex rounded-lg bg-slate-950 p-1 text-[11px] font-medium border border-slate-800">
+          <div role="tablist" aria-label="Reference categories" className="flex rounded-lg bg-slate-950 p-1 text-[11px] font-medium border border-slate-800">
             <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'pitch'}
               onClick={() => setActiveTab('pitch')}
               className={`flex-1 py-1 rounded cursor-pointer transition-colors ${
                 activeTab === 'pitch' ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:text-white'
@@ -42,6 +55,9 @@ export const JuryPitchHelper: React.FC = () => {
               30s Pitch
             </button>
             <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'qa'}
               onClick={() => setActiveTab('qa')}
               className={`flex-1 py-1 rounded cursor-pointer transition-colors ${
                 activeTab === 'qa' ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:text-white'
@@ -50,6 +66,9 @@ export const JuryPitchHelper: React.FC = () => {
               Top 4 Jury Q&A
             </button>
             <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'keywords'}
               onClick={() => setActiveTab('keywords')}
               className={`flex-1 py-1 rounded cursor-pointer transition-colors ${
                 activeTab === 'keywords' ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:text-white'
@@ -142,6 +161,6 @@ export const JuryPitchHelper: React.FC = () => {
           )}
         </div>
       )}
-    </div>
+    </aside>
   );
 };
